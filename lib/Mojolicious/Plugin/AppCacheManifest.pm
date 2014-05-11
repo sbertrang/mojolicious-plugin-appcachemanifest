@@ -58,7 +58,9 @@ sub register
 	     : ( $extension )
 	);
 
-	$app->log->info( "setting up " . __PACKAGE__ . " $VERSION" );
+	my $paths = $app->static->paths();
+
+	$app->log->info( "setting up " . __PACKAGE__ . " $VERSION: @$paths" );
 
 	$self->{timeout} = $timeout;
 
