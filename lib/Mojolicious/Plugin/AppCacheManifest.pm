@@ -1,84 +1,184 @@
 package Mojolicious::Plugin::AppCacheManifest;
 
-use 5.018002;
-use strict;
-use warnings;
+use Mojo::Base qw( Mojolicious::Plugin );
 
-require Exporter;
+our $VERSION = "0.01";
 
-our @ISA = qw(Exporter);
+sub register
+{
+	my ( $self, $app, $conf ) = @_;
+	my $suffix = $conf->{suffix} // "appcache";
+	my $timeout = $conf->{timeout} // 60 * 5;
+	my $re = join( "|", map quotemeta,
+	    ref( $suffix )
+	     ?  @$suffix
+	     : ( $suffix )
+	);
 
-# Items to export into callers namespace by default. Note: do not export
-# names by default without a very good reason. Use EXPORT_OK instead.
-# Do not simply export all your public functions/methods/constants.
+	$app->log->info( "setting up " . __PACKAGE__ . " $VERSION" );
 
-# This allows declaration	use Mojolicious::Plugin::AppCacheManifest ':all';
-# If you do not need this, moving things directly into @EXPORT or @EXPORT_OK
-# will save memory.
-our %EXPORT_TAGS = ( 'all' => [ qw(
-	
-) ] );
+	$self->{timeout} = $timeout;
 
-our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
+	$app->hook( after_dispatch => sub {
+		my $tx = shift->tx();
+		my $req = $tx->req();
+		my $res = $tx->res();
 
-our @EXPORT = qw(
-	
-);
+		# skip it without a matching suffix
+		return unless
+		    $req->url->path =~ m!\A .* \. (?: $re ) \z!x;
 
-our $VERSION = '0.01';
+		return unless
+		    ( $res->headers->content_type() // "" ) =~ m!\A text / cache \- manifest \b!x;
 
 
-# Preloaded methods go here.
+		# absolute path to source file
+		my $path = $res->content->asset->path();
+
+		# get static output
+		my $body = $res->body();
+
+		# 
+		my $output = $self->_get_manifest( $app, $path, $body );
+
+		# and deliver dynamic version instead
+		$res->body( $output );
+	} );
+}
+
+sub _get_manifest
+{
+	my ( $self, $app, $path, $cache ) = @_;
+	my $log = $app->log();
+	my $home = $app->home();
+	my ( $dir ) = $path =~ m!\A (.*) / [^/]+ \z!x;
+
+	# remove empty lines
+	$cache =~ s! ^ \s* \r?\n !!gmx;
+
+	# remove comments
+	$cache =~ s! ^ \s* [#] .*? \r?\n !!gmx;
+
+	# remove leading spaces
+	$cache =~ s! ^ \s* !!gmx;
+
+	# remove trailing spaces
+	$cache =~ s! \s* $ !!gmx;
+
+
+	my $resection = qr/CACHE[ ]MANIFEST|CACHE|NETWORK|FALLBACK/;
+
+	my @cache = split( m/ ^ \s* ($resection) \s* :? \s* \r?\n /msx, $cache );
+
+	# drop first empty element due to splitting
+	if ( length( shift( @cache ) // "" ) ) {
+		$log->error( "garbage before or no manifest header: $path" );
+		return undef;
+	}
+
+	if ( $cache[0] ne "CACHE MANIFEST" ) {
+		$log->error( "first line is not a cache manifest: $path" );
+		return undef;
+	}
+
+	my %cache = map +(
+		$cache[ $_ * 2 ],
+		[ split( m!\r?\n!, $cache[ $_ * 2 + 1 ] ) ]
+	), 0 .. @cache / 2 - 1;
+
+	my %files = map +(
+		map +( $_, undef ), @{ $cache{ $_ } }
+	), "CACHE MANIFEST", "CACHE";
+
+	my @files = sort( keys( %files ) );
+
+	state %maxmtime;
+	state %checktime;
+
+	$maxmtime{ $path } //= 0;
+	$checktime{ $path } //= 0;
+
+	if ( ( my $time = time() ) > $checktime{ $path } + $self->{timeout} ) {
+		$log->debug( "check file timestamps: $path" );
+
+		for my $file ( @files ) {
+			my $xpath;
+
+			# with / relative to public dir
+			if ( $file =~ m!\A /+ ( .*? ) \z!x ) {
+				$xpath = $home->rel_file( $1 );
+			}
+			# urls are like / and match the public dir
+			elsif ( $file =~ m!\A (?: https? : )? // [^/]+ /+ (.*?) \z!ix ) {
+				$xpath = $home->rel_file( $1 );
+			}
+			# without / relative to appcache file
+			else {
+				$xpath = "$dir/$file";
+			}
+
+			my $mtime = stat( $xpath )
+				? ( stat( _ ) )[9]
+				: 0
+			;
+
+			$maxmtime{ $path } = $mtime
+				if $mtime > $maxmtime{ $path };
+		}
+
+		$checktime{ $path } = $time;
+	}
+
+	my $output = sprintf( "CACHE MANIFEST\n# epoch: %s\nCACHE:\n%s\n",
+		$maxmtime{ $path },
+		join( "\n", @files )
+	);
+
+	if ( @{ $cache{"NETWORK"} || [] } > 0 ) {
+		$output .= "NETWORK:\n"
+			. join( "\n", @{ $cache{"NETWORK"} } ) . "\n"
+		;
+	}
+
+	return $output;
+}
 
 1;
+
 __END__
-# Below is stub documentation for your module. You'd better edit it!
 
 =head1 NAME
 
-Mojolicious::Plugin::AppCacheManifest - Perl extension for blah blah blah
+Mojolicious::Plugin::AppCacheManifest - Offline Web Applications support for Mojolicious
 
 =head1 SYNOPSIS
 
-  use Mojolicious::Plugin::AppCacheManifest;
-  blah blah blah
+=head2 Mojolicious::Lite
+
+  plugin "AppCacheManifest";
+ 
+=head2 Mojolicious
+
+  sub startup {
+    $self->plugin( "AppCacheManifest" );
+  }
 
 =head1 DESCRIPTION
 
-Stub documentation for Mojolicious::Plugin::AppCacheManifest, created by h2xs. It looks like the
-author of the extension was negligent enough to leave the stub
-unedited.
-
-Blah blah blah.
-
-=head2 EXPORT
-
-None by default.
-
-
-
-=head1 SEE ALSO
-
-Mention other useful documentation such as the documentation of
-related modules or operating system documentation (such as man pages
-in UNIX), or any relevant external documentation such as RFCs or
-standards.
-
-If you have a mailing list set up for your module, mention it here.
-
-If you have a web site set up for your module, mention it here.
+This plugin manages appcache manifest timeouts.
+It scans the manifest, checks modification of individual files and returns accordingly.
 
 =head1 AUTHOR
 
-A. U. Thor, E<lt>simon@E<gt>
+Simon Bertrang, E<lt>janus@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2014 by A. U. Thor
+Copyright (C) 2014 by Simon Bertrang
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.18.2 or,
 at your option, any later version of Perl 5 you may have available.
 
-
 =cut
+
