@@ -4,6 +4,43 @@ use Mojo::Base qw( Mojolicious::Plugin );
 
 our $VERSION = "0.01";
 
+sub register
+{
+	my ( $self, $app, $conf ) = @_;
+	my $extension = $conf->{extension} // "appcache";
+	my $timeout = $conf->{timeout} // 60 * 5;
+	my $re = join( "|", map quotemeta,
+	    ref( $extension )
+	     ?  @$extension
+	     : ( $extension )
+	);
+	my $redir = qr!\A (.*?) /+ [^/]+ \. (?: $re ) \z!x;
+	my $retype = qr!\A text / cache \- manifest \b!x;
+	my $dirs = $app->static->paths();
+
+	$self->{timeout} = $timeout;
+
+	$app->log->info( "setting up " . __PACKAGE__ . " $VERSION: @$dirs" );
+	$app->hook( after_dispatch => sub {
+		my $tx = shift->tx();
+		my $req = $tx->req();
+		my $res = $tx->res();
+
+		return unless # extension matches
+		    my ( $dir ) = $req->url->path() =~ $redir;
+
+		return unless # mime type matches as well
+		    ( $res->headers->content_type() // "" ) =~ $retype;
+
+		# extract manifest information
+		my $manifest = $self->parse( $res->body() );
+		my $last_modified = $self->max_last_modified( $manifest, $res->content->asset->path(), $dirs );
+
+		$res->body( $self->generate( $manifest, $last_modified ) );
+		$res->headers->last_modified( $last_modified );
+	} );
+}
+
 sub parse
 {
 	my ( $self, $body ) = @_;
@@ -78,43 +115,6 @@ sub generate
 		for grep $manifest->{ $_ }, qw( SETTINGS NETWORK );
 
 	return join( "\n", @output, "" ); # trailing newline
-}
-
-sub register
-{
-	my ( $self, $app, $conf ) = @_;
-	my $extension = $conf->{extension} // "appcache";
-	my $timeout = $conf->{timeout} // 60 * 5;
-	my $re = join( "|", map quotemeta,
-	    ref( $extension )
-	     ?  @$extension
-	     : ( $extension )
-	);
-	my $redir = qr!\A (.*?) /+ [^/]+ \. (?: $re ) \z!x;
-	my $retype = qr!\A text / cache \- manifest \b!x;
-	my $dirs = $app->static->paths();
-
-	$self->{timeout} = $timeout;
-
-	$app->log->info( "setting up " . __PACKAGE__ . " $VERSION: @$dirs" );
-	$app->hook( after_dispatch => sub {
-		my $tx = shift->tx();
-		my $req = $tx->req();
-		my $res = $tx->res();
-
-		return unless # extension matches
-		    my ( $dir ) = $req->url->path() =~ $redir;
-
-		return unless # mime type matches as well
-		    ( $res->headers->content_type() // "" ) =~ $retype;
-
-		# extract manifest information
-		my $manifest = $self->parse( $res->body() );
-		my $last_modified = $self->max_last_modified( $manifest, $res->content->asset->path(), $dirs );
-
-		$res->body( $self->generate( $manifest, $last_modified ) );
-		$res->headers->last_modified( $last_modified );
-	} );
 }
 
 1;
