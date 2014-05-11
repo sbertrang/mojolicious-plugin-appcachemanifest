@@ -4,20 +4,12 @@ use Mojo::Base qw( Mojolicious::Plugin );
 
 our $VERSION = "0.01";
 
-has "error";
-
-# parses the given body and extracts a hash reference with section headers as
-# key and value lines as array - empty lines and comments are ignored
 sub parse
 {
-	my $self = shift;
-	my $body = shift;
+	my ( $self, $body ) = @_;
 
-	# check and remove header
-	unless ( $body =~ s!\A CACHE [ ] MANIFEST [ \t\r\n] \s* !!sx ) {
-		$self->error( "invalid or no header found" );
-		return undef;
-	}
+	return undef unless # check and remove header
+	    $body =~ s!\A CACHE [ ] MANIFEST [ \t\r\n] \s* !!sx;
 
 	# split sections by header; prepend header for initial section
 	my @body = ( "CACHE", split( m/
@@ -27,14 +19,11 @@ sub parse
 	my %seen;
 	my %manifest;
 
-	# merge sections
 	while ( my $header = shift( @body ) ) {
-		# ignore comments
 		my @lines = grep( +(
 		    ! m!\A [#] !x
 		), split( m! \s* \r?\n \s* !x, shift( @body ) ) );
 
-		# prevent duplicates
 		push( @{ $manifest{ $header } }, map $header eq "FALLBACK" ? (
 		    m!\A ( \S+ ) \s+ ( \S+ )!x && ! $seen{ $header, $1, $2 }++
 		        ? ( $1, $2 ) : ()
