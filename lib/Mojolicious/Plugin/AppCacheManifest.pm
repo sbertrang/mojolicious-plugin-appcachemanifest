@@ -90,135 +90,31 @@ sub register
 	     ?  @$extension
 	     : ( $extension )
 	);
-
-	my $paths = $app->static->paths();
-
-	$app->log->info( "setting up " . __PACKAGE__ . " $VERSION: @$paths" );
+	my $redir = qr!\A (.*?) /+ [^/]+ \. (?: $re ) \z!x;
+	my $retype = qr!\A text / cache \- manifest \b!x;
+	my $dirs = $app->static->paths();
 
 	$self->{timeout} = $timeout;
 
+	$app->log->info( "setting up " . __PACKAGE__ . " $VERSION: @$dirs" );
 	$app->hook( after_dispatch => sub {
 		my $tx = shift->tx();
 		my $req = $tx->req();
 		my $res = $tx->res();
 
-		# skip it without a matching extension
-		return unless
-		    $req->url->path =~ m!\A .* \. (?: $re ) \z!x;
+		return unless # extension matches
+		    my ( $dir ) = $req->url->path() =~ $redir;
 
-		return unless
-		    ( $res->headers->content_type() // "" ) =~ m!\A text / cache \- manifest \b!x;
+		return unless # mime type matches as well
+		    ( $res->headers->content_type() // "" ) =~ $retype;
 
+		# extract manifest information
+		my $manifest = $self->parse( $res->body() );
+		my $last_modified = $self->max_last_modified( $manifest, $res->content->asset->path(), $dirs );
 
-		# absolute path to source file
-		my $path = $res->content->asset->path();
-
-		# get static output
-		my $body = $res->body();
-
-		# 
-		my $output = $self->_get_manifest( $app, $path, $body );
-
-		# and deliver dynamic version instead
-		$res->body( $output );
+		$res->body( $self->generate( $manifest, $last_modified ) );
+		$res->headers->last_modified( $last_modified );
 	} );
-}
-
-sub _get_manifest
-{
-	my ( $self, $app, $path, $cache ) = @_;
-	my $log = $app->log();
-	my $home = $app->home();
-	my ( $dir ) = $path =~ m!\A (.*) / [^/]+ \z!x;
-
-	# remove blank lines
-	$cache =~ s! ^ \s* \r?\n !!gmx;
-
-	# remove comments
-	$cache =~ s! ^ \s* [#] .*? \r?\n !!gmx;
-
-	# remove leading spaces
-	$cache =~ s! ^ \s* !!gmx;
-
-	# remove trailing spaces
-	$cache =~ s! \s* $ !!gmx;
-
-
-	my $resection = qr/CACHE[ ]MANIFEST|CACHE|NETWORK|FALLBACK/;
-
-	my @cache = split( m/ ^ \s* ($resection) \s* :? \s* \r?\n /msx, $cache );
-
-	# drop first empty element due to splitting
-	if ( length( shift( @cache ) // "" ) ) {
-		$log->error( "garbage before or no manifest header: $path" );
-		return undef;
-	}
-
-	if ( $cache[0] ne "CACHE MANIFEST" ) {
-		$log->error( "first line is not a cache manifest: $path" );
-		return undef;
-	}
-
-	my %cache = map +(
-		$cache[ $_ * 2 ],
-		[ split( m!\r?\n!, $cache[ $_ * 2 + 1 ] ) ]
-	), 0 .. @cache / 2 - 1;
-
-	my %files = map +(
-		map +( $_, undef ), @{ $cache{ $_ } }
-	), "CACHE MANIFEST", "CACHE";
-
-	my @files = sort( keys( %files ) );
-
-	state %maxmtime;
-	state %checktime;
-
-	$maxmtime{ $path } //= 0;
-	$checktime{ $path } //= 0;
-
-	if ( ( my $time = time() ) > $checktime{ $path } + $self->{timeout} ) {
-		$log->debug( "check file timestamps: $path" );
-
-		for my $file ( @files ) {
-			my $xpath;
-
-			# with / relative to public dir
-			if ( $file =~ m!\A /+ ( .*? ) \z!x ) {
-				$xpath = $home->rel_file( $1 );
-			}
-			# urls are like / and match the public dir
-			elsif ( $file =~ m!\A (?: https? : )? // [^/]+ /+ (.*?) \z!ix ) {
-				$xpath = $home->rel_file( $1 );
-			}
-			# without / relative to appcache file
-			else {
-				$xpath = "$dir/$file";
-			}
-
-			my $mtime = stat( $xpath )
-				? ( stat( _ ) )[9]
-				: 0
-			;
-
-			$maxmtime{ $path } = $mtime
-				if $mtime > $maxmtime{ $path };
-		}
-
-		$checktime{ $path } = $time;
-	}
-
-	my $output = sprintf( "CACHE MANIFEST\n# epoch: %s\nCACHE:\n%s\n",
-		$maxmtime{ $path },
-		join( "\n", @files )
-	);
-
-	if ( @{ $cache{"NETWORK"} || [] } > 0 ) {
-		$output .= "NETWORK:\n"
-			. join( "\n", @{ $cache{"NETWORK"} } ) . "\n"
-		;
-	}
-
-	return $output;
 }
 
 1;
