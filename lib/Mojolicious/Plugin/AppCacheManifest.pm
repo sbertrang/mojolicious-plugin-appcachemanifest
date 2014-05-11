@@ -50,12 +50,12 @@ sub parse
 sub register
 {
 	my ( $self, $app, $conf ) = @_;
-	my $suffix = $conf->{suffix} // "appcache";
+	my $extension = $conf->{extension} // "appcache";
 	my $timeout = $conf->{timeout} // 60 * 5;
 	my $re = join( "|", map quotemeta,
-	    ref( $suffix )
-	     ?  @$suffix
-	     : ( $suffix )
+	    ref( $extension )
+	     ?  @$extension
+	     : ( $extension )
 	);
 
 	$app->log->info( "setting up " . __PACKAGE__ . " $VERSION" );
