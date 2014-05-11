@@ -69,7 +69,7 @@ sub register
 		my $req = $tx->req();
 		my $res = $tx->res();
 
-		# skip it without a matching suffix
+		# skip it without a matching extension
 		return unless
 		    $req->url->path =~ m!\A .* \. (?: $re ) \z!x;
 
@@ -98,7 +98,7 @@ sub _get_manifest
 	my $home = $app->home();
 	my ( $dir ) = $path =~ m!\A (.*) / [^/]+ \z!x;
 
-	# remove empty lines
+	# remove blank lines
 	$cache =~ s! ^ \s* \r?\n !!gmx;
 
 	# remove comments
@@ -200,18 +200,41 @@ Mojolicious::Plugin::AppCacheManifest - Offline Web Applications support for Moj
 
 =head2 Mojolicious::Lite
 
+  # default usage with *.appcache
   plugin "AppCacheManifest";
+
+  # switching to *.mf extension
+  plugin "AppCacheManifest" => { extension => "mf" };
+
+  # supporting multiple extensions
+  plugin "AppCacheManifest" => { extension => [qw[ appcache manifest mf ]] };
  
 =head2 Mojolicious
 
+  # using the defaults
   sub startup {
     $self->plugin( "AppCacheManifest" );
+  }
+
+  # changing the cache timeout
+  sub startup {
+    $self->plugin( "AppCacheManifest" => { timeout => 10 } );
   }
 
 =head1 DESCRIPTION
 
 This plugin manages appcache manifest timeouts.
 It scans the manifest, checks modification of individual files and returns accordingly.
+
+=head1 SEE ALSO
+
+=over 8
+
+=item L<HTML5::Manifest>
+
+different approach by generating a manifest programmatically
+
+=back
 
 =head1 AUTHOR
 
