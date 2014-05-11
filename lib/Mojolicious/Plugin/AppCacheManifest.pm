@@ -36,6 +36,50 @@ sub parse
 	return \%manifest;
 }
 
+sub max_last_modified
+{
+	my ( $self, $manifest, $path, $dirs ) = @_;
+	my $maxmtime = ( stat( $path ) )[9];
+	my @paths = map Mojo::URL->new( $_ )->path(), @{ $manifest->{CACHE} };
+
+	for my $parts ( grep $_->[0] ne "..", map $_->canonicalize->parts(), @paths ) {
+		my $path = join( "/", @$parts );
+		my @stat;
+
+		@stat = stat( "$_/$path" ) and last
+			for @$dirs;
+
+		$maxmtime = $stat[9] if @stat && $stat[9] > $maxmtime;
+	}
+
+	return Mojo::Date->new( $maxmtime );
+}
+
+sub generate
+{
+	my ( $self, $manifest, $date ) = @_;
+	my @output = (
+		"CACHE MANIFEST",
+		"# $date",
+	);
+
+	push( @output, "CACHE:", @{ $manifest->{CACHE} } )
+		if $manifest->{CACHE};
+
+	if ( my $fallback = $manifest->{FALLBACK} ) {
+		push( @output, "FALLBACK:", map +(
+		    $fallback->[ $_ * 2 ] .
+		    " " .
+		    $fallback->[ $_ * 2 + 1 ]
+		), 0 .. @$fallback / 2 - 1 );
+	}
+
+	push( @output, "$_:", @{ $manifest->{ $_ } } )
+		for grep $manifest->{ $_ }, qw( SETTINGS NETWORK );
+
+	return join( "\n", @output, "" ); # trailing newline
+}
+
 sub register
 {
 	my ( $self, $app, $conf ) = @_;
