@@ -143,33 +143,41 @@ Mojolicious::Plugin::AppCacheManifest - Offline Web Applications support for Moj
 
 =head1 SYNOPSIS
 
-=head2 Mojolicious::Lite
-
-  # default usage with *.appcache
+  # Mojolicious
+  $self->plugin( "AppCacheManifest" );
+  $self->plugin( "AppCacheManifest" => { extension => "manifest" } );
+  $self->plugin( "AppCacheManifest" => { extension => [qw[ appcache manifest mf ]] } );
+  $self->plugin( "AppCacheManifest" => { timeout => 0 } );
+  
+  # Mojolicious::Lite
   plugin "AppCacheManifest";
-
-  # switching to *.mf extension
-  plugin "AppCacheManifest" => { extension => "mf" };
-
-  # supporting multiple extensions
+  plugin "AppCacheManifest" => { extension => "manifest" };
   plugin "AppCacheManifest" => { extension => [qw[ appcache manifest mf ]] };
- 
-=head2 Mojolicious
-
-  # using the defaults
-  sub startup {
-    $self->plugin( "AppCacheManifest" );
-  }
-
-  # changing the cache timeout
-  sub startup {
-    $self->plugin( "AppCacheManifest" => { timeout => 10 } );
-  }
+  plugin "AppCacheManifest" => { timeout => 0 };
 
 =head1 DESCRIPTION
 
 This plugin manages appcache manifest timeouts.
 It scans the manifest, checks modification of individual files and returns accordingly.
+
+=head1 OPTIONS
+
+=head2 extension
+
+  # Mojolicious::Lite
+  plugin "AppCacheManifest" => { extension => "manifest" };
+  plugin "AppCacheManifest" => { extension => [qw[ appcache manifest mf ]] };
+
+Manifest file extension, defaults to C<appcache> and allows array references
+to pass multiple extensions.
+
+=head2 timeout
+
+  # Mojolicious::Lite
+  plugin "AppCacheManifest" => { timeout => 0 };
+
+Cache timeout after which manifests get fully checked again, defaults to
+C<600> seconds (5 minutes). A timeout of C<0> disables the memory cache.
 
 =head1 SEE ALSO
 
@@ -190,8 +198,7 @@ Simon Bertrang, E<lt>janus@cpan.orgE<gt>
 Copyright (C) 2014 by Simon Bertrang
 
 This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself, either Perl version 5.18.2 or,
-at your option, any later version of Perl 5 you may have available.
+it under the same terms as Perl itself.
 
 =cut
 
