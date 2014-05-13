@@ -62,7 +62,7 @@ sub parse
 {
 	my ( $self, $body ) = @_;
 
-	return undef unless # check and remove header
+	return unless # found and removed the header
 	    $body =~ s!\A CACHE [ ] MANIFEST [ \t\r\n] \s* !!sx;
 
 	# split sections by header; prepend header for initial section
@@ -116,6 +116,7 @@ sub generate
 		"# $date",
 	);
 
+	# put cache section explicitely first
 	push( @output, "CACHE:", @{ $manifest->{CACHE} } )
 		if $manifest->{CACHE};
 
@@ -127,6 +128,7 @@ sub generate
 		), 0 .. @$fallback / 2 - 1 );
 	}
 
+	# finally settings and network in that order
 	push( @output, "$_:", @{ $manifest->{ $_ } } )
 		for grep $manifest->{ $_ }, qw( SETTINGS NETWORK );
 
