@@ -3,7 +3,8 @@ package Mojolicious::Plugin::AppCacheManifest;
 use Mojo::Base qw( Mojolicious::Plugin );
 
 our $VERSION = "0.01";
-our %MANIFEST;
+our %HEADERS = map +( $_, undef ), qw( CACHE FALLBACK NETWORK SETTINGS );
+our %CACHE;
 
 sub register
 {
@@ -17,9 +18,7 @@ sub register
 	);
 	my $redir = qr!\A (.*?) /+ [^/]+ \. (?: $re ) \z!x;
 	my $retype = qr!\A text / cache \- manifest \b!x;
-	my $dirs = $app->static->paths();
 
-	$app->log->info( "setting up " . __PACKAGE__ . " $VERSION: @$dirs" );
 	$app->hook( after_dispatch => sub {
 		my $tx = shift->tx();
 		my $req = $tx->req();
@@ -31,34 +30,43 @@ sub register
 		return unless # mime type matches as well
 		    ( $res->headers->content_type() // "" ) =~ $retype;
 
-		my $path = $res->content->asset->path();
-		my $mtime = ( stat( $path ) )[9];
-		my $time = time();
-		my $last_modified;
-		my $output;
+		my ( $output, $last_modified ) = $self->_process(
+			$res->body(),
+			$res->content->asset->path(),
+			$app->static->paths(),
+			$timeout
+		);
 
-		if ( exists( $MANIFEST{ $path } ) &&
-		             $MANIFEST{ $path }[0] >= $mtime &&
-		             $MANIFEST{ $path }[1] + $timeout > $time ) {
-			$last_modified = $MANIFEST{ $path }[2];
-			$output = $MANIFEST{ $path }[3];
-		}
-		else {
-			my $manifest = $self->parse( $res->body() );
-
-			$last_modified = $self->max_last_modified( $manifest, $path, $dirs, $mtime );
-			$output = $self->generate( $manifest, $last_modified );
-
-			$MANIFEST{ $path } = [ $last_modified->epoch(), $time, $last_modified, $output ]
-				if $timeout > 0;
-		}
-
-		$res->headers->last_modified( $last_modified );
 		$res->body( $output );
+		$res->headers->last_modified( $last_modified );
 	} );
 }
 
-sub parse
+sub _process
+{
+	my ( $self, $body, $path, $dirs, $timeout ) = @_;
+	my $mtime = ( stat( $path ) )[9];
+	my $time = time();
+
+	# use cache when file modification and timeout are fine
+	return @{ $CACHE{ $path } }[2,3] if
+	  exists( $CACHE{ $path } ) &&
+		  $CACHE{ $path }[0] >= $mtime &&
+		  $CACHE{ $path }[1] + $timeout > $time;
+
+	# extract structure, find highest last modification and generate new output
+	my $manifest = $self->_parse( $body );
+	my $date = $self->_find_last_modified( $manifest, $mtime, $dirs );
+	my $output = $self->_generate( $manifest, $date );
+
+	# put into cache when a timeout is given
+	$CACHE{ $path } = [ $date->epoch(), $time, $output, $date ]
+		if $timeout > 0;
+
+	return ( $output, $date );
+}
+
+sub _parse
 {
 	my ( $self, $body ) = @_;
 
@@ -67,48 +75,60 @@ sub parse
 
 	# split sections by header; prepend header for initial section
 	my @body = ( "CACHE", split( m/
-	    ^ \s* ( CACHE | FALLBACK | NETWORK | SETTINGS ) \s* :? \s* \r?\n \s*
+	    ^ \s* (\S+) \s* : \s* \r?\n \s*
 	/mx, $body ) );
 
 	my %seen;
 	my %manifest;
 
-	while ( my $header = shift( @body ) ) {
+	while ( my $header = uc( shift( @body ) ) ) {
+		my $part = shift( @body );
+
+		# skip unknown
+		next unless exists( $HEADERS{ $header } );
+
+		# separate lines without comments
 		my @lines = grep( +(
 		    ! m!\A [#] !x
-		), split( m! \s* \r?\n \s* !x, shift( @body ) ) );
+		), split( m! \s* \r?\n \s* !x, $part ) );
 
-		push( @{ $manifest{ $header } }, map $header eq "FALLBACK" ? (
-		    m!\A ( \S+ ) \s+ ( \S+ )!x && ! $seen{ $header, $1, $2 }++
-		        ? ( $1, $2 ) : ()
-		) : (
-		    m!\A ( \S+ )            !x && ! $seen{ $header, $1 }++
-		        ? ( $1 ) : ()
+		# unique elements in order; fallback section has pairs
+		push( @{ $manifest{ $header } }, map +( $header eq "FALLBACK"
+		    ? m!\A (\S+) \s+ (\S+) !x && ! $seen{ $header, $1, $2 }++
+		        ? [ $1, $2 ] : ( )
+		    : ! $seen{ $header, $_ }++
+		        ? ( $_ ) : ( )
 		), @lines );
 	}
 
 	return \%manifest;
 }
 
-sub max_last_modified
+sub _find_last_modified
 {
-	my ( $self, $manifest, $path, $dirs, $maxmtime ) = @_;
-	my @paths = map Mojo::URL->new( $_ )->path(), @{ $manifest->{CACHE} };
+	my ( $self, $manifest, $maxmtime, $dirs ) = @_;
+	my @parts = map Mojo::URL->new( $_ )->path->canonicalize->parts(),
+		    @{ $manifest->{CACHE} };
 
-	for my $parts ( grep $_->[0] ne "..", map $_->canonicalize->parts(), @paths ) {
-		my $path = join( "/", @$parts );
-		my @stat;
+	# check all paths but prevent path traversal attempts
+	for my $path ( map join( "/", @$_ ), grep $_->[0] ne "..", @parts ) {
+		my $mtime = 0;
 
-		@stat = stat( "$_/$path" ) and last
+		# try the path in each directory
+		stat( "$_/$path" ) and
+		    # keep the modification time
+		    $mtime = ( stat( _ ) )[9],
+		    # stop on the first hit
+		    last
 			for @$dirs;
 
-		$maxmtime = $stat[9] if @stat && $stat[9] > $maxmtime;
+		$maxmtime = $mtime if $mtime > $maxmtime;
 	}
 
 	return Mojo::Date->new( $maxmtime );
 }
 
-sub generate
+sub _generate
 {
 	my ( $self, $manifest, $date ) = @_;
 	my @output = (
@@ -120,13 +140,9 @@ sub generate
 	push( @output, "CACHE:", @{ $manifest->{CACHE} } )
 		if $manifest->{CACHE};
 
-	if ( my $fallback = $manifest->{FALLBACK} ) {
-		push( @output, "FALLBACK:", map +(
-		    $fallback->[ $_ * 2 ] .
-		    " " .
-		    $fallback->[ $_ * 2 + 1 ]
-		), 0 .. @$fallback / 2 - 1 );
-	}
+	# followed by fallback in pairs
+	push( @output, "FALLBACK:", map "@$_", @{ $manifest->{FALLBACK} } )
+		if $manifest->{FALLBACK};
 
 	# finally settings and network in that order
 	push( @output, "$_:", @{ $manifest->{ $_ } } )
