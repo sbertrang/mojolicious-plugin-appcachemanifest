@@ -81,7 +81,7 @@ sub _parse
 	my %seen;
 	my %manifest;
 
-	while ( my $header = uc( shift( @body ) ) ) {
+	while ( @body and my $header = uc( shift( @body ) ) ) {
 		my $part = shift( @body );
 
 		# skip unknown
