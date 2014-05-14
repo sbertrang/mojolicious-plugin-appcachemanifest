@@ -157,7 +157,7 @@ __END__
 
 =head1 NAME
 
-Mojolicious::Plugin::AppCacheManifest - Offline Web Applications support for Mojolicious
+Mojolicious::Plugin::AppCacheManifest - Offline web application manifest support for Mojolicious
 
 =head1 SYNOPSIS
 
@@ -175,8 +175,11 @@ Mojolicious::Plugin::AppCacheManifest - Offline Web Applications support for Moj
 
 =head1 DESCRIPTION
 
-This plugin manages appcache manifest timeouts.
-It scans the manifest, checks modification of individual files and returns accordingly.
+This plugin manages manifest delivery for L<Offline Web applications|
+http://www.whatwg.org/specs/web-apps/current-work/multipage/offline.html>.
+It read manifests, checks modification of contained files that exist in static
+directories, and returns a clean manifest with only one comment containing a
+timestamp to allow for cache invalidation on changes.
 
 =head1 OPTIONS
 
@@ -186,8 +189,8 @@ It scans the manifest, checks modification of individual files and returns accor
   plugin "AppCacheManifest" => { extension => "manifest" };
   plugin "AppCacheManifest" => { extension => [qw[ appcache manifest mf ]] };
 
-Manifest file extension, defaults to C<appcache> and allows array references
-to pass multiple extensions.
+Manifest file extension, allows array references to pass multiple extensions and
+defaults to C<appcache>.
 
 =head2 timeout
 
@@ -197,13 +200,20 @@ to pass multiple extensions.
 Cache timeout after which manifests get fully checked again, defaults to
 C<600> seconds (5 minutes). A timeout of C<0> disables the memory cache.
 
+Note: Manifests are always tested and trigger a full check when they change.
+
 =head1 SEE ALSO
 
 =over 8
 
-=item L<HTML5::Manifest>
+=item *
 
-different approach by generating a manifest programmatically
+Specification for L<Offline Web applications|
+http://www.whatwg.org/specs/web-apps/current-work/multipage/offline.html>.
+
+=item *
+
+L<HTML5::Manifest> has a different approach by generating the manifest programmatically.
 
 =back
 
