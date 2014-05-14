@@ -137,7 +137,7 @@ sub _generate
 	);
 
 	# put cache section explicitely first
-	push( @output, "CACHE:", @{ $manifest->{CACHE} } )
+	push( @output, @{ $manifest->{CACHE} } )
 		if $manifest->{CACHE};
 
 	# followed by fallback in pairs
