@@ -6,45 +6,79 @@ our $VERSION = "0.01";
 our %HEADERS = map +( $_, undef ), qw( CACHE FALLBACK NETWORK SETTINGS );
 our %CACHE;
 
+has "timeout";
+
 sub register
 {
 	my ( $self, $app, $conf ) = @_;
 	my $extension = $conf->{extension} // "appcache";
-	my $timeout = $conf->{timeout} // 60 * 5;
 	my $re = join( "|", map quotemeta,
 	    ref( $extension )
 	     ?  @$extension
 	     : ( $extension )
 	);
 	my $redir = qr!\A (.*?) /+ [^/]+ \. (?: $re ) \z!x;
-	my $retype = qr!\A text / cache \- manifest \b!x;
+	my $static = $app->static();
 
-	$app->hook( after_dispatch => sub {
-		my $tx = shift->tx();
+	$self->timeout( $conf->{timeout} // 0 );
+
+	$app->hook( before_dispatch => sub {
+		my $c = shift;
+		my $stash = $c->stash();
+		my $tx = $c->tx();
 		my $req = $tx->req();
 		my $res = $tx->res();
+		my $url = $req->url();
+		my $path  = $stash->{path}
+			  ? Mojo::Path->new( $stash->{path} )
+			  : $url->path->clone();
+		my $parts = $path->canonicalize->parts();
 
-		return unless # extension matches
-		    my ( $dir ) = $req->url->path() =~ $redir;
+		# catch nonsense
+		return if @$parts == 0 || $parts->[0] eq "..";
 
-		return unless # mime type matches as well
-		    ( $res->headers->content_type() // "" ) =~ $retype;
+		# check for extensions
+		unless ( $path =~ $redir ) {
+			# otherwise do what the static dispatch code does
+			return unless $static->serve( $c, join( "/", @$parts ) );
 
+			$stash->{"mojo.static"}++;
+			return !!$c->rendered();
+		}
+
+		# setup and prepare
+		my $code = 200;
+		my $asset = $static->file( join( "/", @$parts ) );
 		my ( $output, $last_modified ) = $self->_process(
-			$res->body(),
-			$res->content->asset->path(),
-			$app->static->paths(),
-			$timeout
+			$asset->slurp(),
+			$asset->path(),
+			$static->paths(),
 		);
 
-		$res->body( $output );
+		# save bandwith if possible
+		if ( my $date = $req->headers->if_modified_since() ) {
+			$code = 304
+				if $last_modified eq Mojo::Date->new( $date );
+		}
+
+		# send response with conditional body
+		$res->code( $code );
+		$res->headers->content_type( "text/cache-manifest" );
 		$res->headers->last_modified( $last_modified );
+		$res->body( $output )
+			if $code == 200;
+
+		$stash->{"mojo.static"}++;
+		return !!$c->rendered();
 	} );
+
+	return $self;
 }
 
 sub _process
 {
-	my ( $self, $body, $path, $dirs, $timeout ) = @_;
+	my ( $self, $body, $path, $dirs ) = @_;
+	my $timeout = $self->timeout();
 	my $mtime = ( stat( $path ) )[9];
 	my $time = time();
 
@@ -165,13 +199,13 @@ Mojolicious::Plugin::AppCacheManifest - Offline web application manifest support
   $self->plugin( "AppCacheManifest" );
   $self->plugin( "AppCacheManifest" => { extension => "manifest" } );
   $self->plugin( "AppCacheManifest" => { extension => [qw[ appcache manifest mf ]] } );
-  $self->plugin( "AppCacheManifest" => { timeout => 0 } );
+  $self->plugin( "AppCacheManifest" => { timeout => 60 * 5 } );
   
   # Mojolicious::Lite
   plugin "AppCacheManifest";
   plugin "AppCacheManifest" => { extension => "manifest" };
   plugin "AppCacheManifest" => { extension => [qw[ appcache manifest mf ]] };
-  plugin "AppCacheManifest" => { timeout => 0 };
+  plugin "AppCacheManifest" => { timeout => 60 * 5 };
 
 =head1 DESCRIPTION
 
@@ -195,12 +229,18 @@ defaults to C<appcache>.
 =head2 timeout
 
   # Mojolicious::Lite
-  plugin "AppCacheManifest" => { timeout => 0 };
+  plugin "AppCacheManifest" => { timeout => 60 * 5 };
 
-Cache timeout after which manifests get fully checked again, defaults to
-C<600> seconds (5 minutes). A timeout of C<0> disables the memory cache.
+Cache timeout after which all files in the cache section of manifests get
+checked again, defaults to C<0> seconds (disabled).
 
 Note: Manifests are always tested and trigger a full check when they change.
+
+=head1 METHODS
+
+=head2 timeout
+
+Accessor for L</timeout>, see above.
 
 =head1 SEE ALSO
 
