@@ -80,5 +80,8 @@ $t->get_ok( "/random.appcache" => { "If-Modified-Since" => $mdate } )
 \Q$body\E !x )
 ;
 
+# keep the tree clean
+unlink( $testcss );
+
 done_testing();
 
