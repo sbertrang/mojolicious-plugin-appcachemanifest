@@ -2,7 +2,7 @@ package Mojolicious::Plugin::AppCacheManifest;
 
 use Mojo::Base qw( Mojolicious::Plugin );
 
-our $VERSION = "0.01";
+our $VERSION = "0.02";
 our %HEADERS = map +( $_, undef ), qw( CACHE FALLBACK NETWORK SETTINGS );
 our %CACHE;
 
