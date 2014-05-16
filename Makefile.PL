@@ -12,6 +12,14 @@ WriteMakefile(
 	PREREQ_PM	=> {
 		Mojolicious	=> 0,
 	},
+	META_MERGE	=> {
+		resources	=> {
+			license		=> "http://dev.perl.org/licenses/",
+			repository	=> "https://github.com/sbertrang/mojolicious-plugin-appcachemanifest.git",
+			bugtracker	=> "https://github.com/sbertrang/mojolicious-plugin-appcachemanifest/issues",
+		},
+	},
+	LICENSE		=> "perl",
 	AUTHOR		=> 'Simon Bertrang <janus@cpan.org>',
 );
 
