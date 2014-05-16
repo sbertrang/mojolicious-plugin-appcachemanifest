@@ -16,10 +16,12 @@ SYNOPSIS
       plugin "AppCacheManifest" => { timeout => 60 * 5 };
 
 DESCRIPTION
-    This plugin manages manifest delivery for Offline Web applications. It
-    read manifests, checks modification of contained files that exist in
-    static directories, and returns a clean manifest with only one comment
-    containing a timestamp to allow for cache invalidation on changes.
+    This plugin manages manifest delivery for Offline Web applications
+    <http://www.whatwg.org/specs/web-apps/current-work/multipage/offline.html>.
+    It read manifests, checks modification of contained files that exist
+    in static directories, and returns a clean manifest with only one
+    comment containing a timestamp to allow for cache invalidation on
+    changes.
 
 OPTIONS
   extension
@@ -45,7 +47,8 @@ METHODS
     Accessor for "timeout", see above.
 
 SEE ALSO
-    *       Specification for Offline Web applications.
+    *       Specification for Offline Web applications
+            <http://www.whatwg.org/specs/web-apps/current-work/multipage/offline.html>.
 
     *       HTML5::Manifest has a different approach by generating the
             manifest programmatically.
