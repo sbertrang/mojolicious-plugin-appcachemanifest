@@ -1,5 +1,8 @@
 Revision history for Perl extension Mojolicious::Plugin::AppCacheManifest.
 
+0.03  Mon May 19 19:28:51 CEST 2014
+	- ensure minimum version of Mojolicious
+
 0.02  Fri May 16 22:08:41 CEST 2014
 	- provide more meta information
 	- fix links in documentation
