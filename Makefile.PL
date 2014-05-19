@@ -10,7 +10,7 @@ WriteMakefile(
 	ABSTRACT_FROM	=> "lib/Mojolicious/Plugin/AppCacheManifest.pm",
 	VERSION_FROM	=> "lib/Mojolicious/Plugin/AppCacheManifest.pm",
 	PREREQ_PM	=> {
-		Mojolicious	=> "3.09",
+		Mojolicious	=> "3.12",
 	},
 	META_MERGE	=> {
 		resources	=> {
