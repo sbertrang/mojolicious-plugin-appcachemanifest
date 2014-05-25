@@ -9,7 +9,7 @@ sub development_mode
 {
 	my $self = shift;
 
-	$self->static->root( $self->home->rel_dir( "public" ) );
+	$self->static->paths->[0] = $self->home->rel_dir( "public" );
 }
 
 sub startup
